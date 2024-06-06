@@ -1,7 +1,7 @@
 import asyncio, os, enum
 from datetime import datetime, timedelta
-from pyrogram import Client, filters
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Enum, select, update
+from pyrogram import Client
+from sqlalchemy import Column, Integer, DateTime, Enum, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -45,16 +45,16 @@ async def check_triggers(client: Client, user_id: int) -> bool:
     return False
 
 # Функция для отправки сообщений
-async def send_message(client: Client, session, user, message):
+async def send_message(client: Client, user: User, message:dict) -> bool:
     try:
         await client.send_message(user.id, message["text"])
         return True
     except Exception as e:
-        print(f"Failed to send message to {user.id}: {e}")
+        print(f"Ошибка при отправке сообщения пользователю {user.id}: {e}")
         return False
 
 # Основной цикл
-async def main():
+async def main() -> None:
     while True:
         async with SessionLocal() as session:
             # Получаем пользователей со статусом alive
@@ -68,11 +68,11 @@ async def main():
                 for i, message in enumerate(messages):
                     send_time = user.created_at + sum(m["delay"] for m in messages[:i + 1])
                     if now >= send_time:
-                        if "trigger" in message and await check_triggers(app, user.id):
+                        if "trigger" in message or await check_triggers(app, user.id):
                             await session.execute(update(User).where(User.id == user.id).values(status=UserStatus.finished, status_updated_at=now))
                             break
 
-                        if await send_message(app, session, user, message):
+                        if await send_message(app, user, message):
                             user.created_at = now  # Обновляем время отправки последнего сообщения
                         else:
                             await session.execute(update(User).where(User.id == user.id).values(status=UserStatus.dead, status_updated_at=now))
@@ -81,6 +81,5 @@ async def main():
             await session.commit()
         await asyncio.sleep(60)  # Пауза между проверками
 
-# Запуск бота
 if __name__ == "__main__":
     asyncio.run(main())
